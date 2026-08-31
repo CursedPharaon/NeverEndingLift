@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Never Ending Lift</title>
+<link href="https://fonts.googleapis.com/css2?family=Creepster&family=Eater&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+</head>
+<body>
+<div id="vignette"></div>
+<div id="chromatic"></div>
+<div id="redFlash"></div>
+<div id="blackFade"></div>
+
+<!-- Crosshair -->
+<div id="crosshair"></div>
+<div id="interactPrompt"></div>
+
+<!-- HUD -->
+<div id="hud">
+  <div id="questLog">NEED TO FIX THE ELEVATOR. FIND TOOLS.</div>
+  <div id="inventory">INV: <span id="invText">empty</span></div>
+  <div id="floorIndicator">FLOOR: --</div>
+  <div id="fpsHint">WASD to move • Mouse to look • Click to interact • ESC to unlock mouse</div>
+</div>
+
+<!-- Main Menu -->
+<div id="menu" class="overlay">
+  <div class="menu-bg"></div>
+  <h1 id="title" class="glitch" data-text="Never Ending Lift">Never Ending Lift</h1>
+  <p class="subtitle">The lift never stops. It only goes deeper.</p>
+  <div class="menu-buttons">
+    <button id="btnStart" class="btn primary">START GAME</button>
+    <button id="btnOptions" class="btn">OPTIONS</button>
+    <button id="btnCredits" class="btn">CREDITS</button>
+  </div>
+  <div id="optionsPanel" class="panel hidden">
+    <h3>OPTIONS</h3>
+    <label>Brightness <input type="range" id="brightness" min="0.5" max="1.5" step="0.05" value="1"></label>
+    <label>Volume <input type="range" id="volume" min="0" max="1" step="0.05" value="0.6"></label>
+    <button class="btn small" id="btnCloseOptions">CLOSE</button>
+  </div>
+  <div id="creditsPanel" class="panel hidden">
+    <h3>CREDITS</h3>
+    <p>Game by Never Ending Lift Team<br>Built with Three.js & Web Audio API<br>Textures procedurally generated<br>All screams are synthetic. Don't listen alone.</p>
+    <button class="btn small" id="btnCloseCredits">CLOSE</button>
+  </div>
+  <p class="hint">Click START then click screen to lock mouse. Headphones recommended.</p>
+</div>
+
+<!-- Safe Modal -->
+<div id="safeModal" class="modal hidden">
+  <div class="modal-content">
+    <h2>SAFE — ENTER 4 LETTERS</h2>
+    <p class="codeHint" id="codeHint">Find the key to reveal the code</p>
+    <input id="safeInput" maxlength="4" placeholder="ABCD" autocomplete="off">
+    <div class="modal-buttons">
+      <button id="safeSubmit" class="btn primary small">UNLOCK</button>
+      <button id="safeCancel" class="btn small">CANCEL</button>
+    </div>
+    <p id="safeMsg"></p>
+  </div>
+</div>
+
+<!-- Jumpscare -->
+<div id="jumpscare" class="hidden">
+  <canvas id="jumpscareCanvas" width="800" height="600"></canvas>
+  <h1 id="jumpscareText">GAME OVER</h1>
+  <button id="btnRestart" class="btn primary">RESTART</button>
+</div>
+
+<!-- Win Screen -->
+<div id="winScreen" class="overlay hidden">
+  <h1 class="winTitle">YOU ESCAPED?</h1>
+  <p class="winSubtitle">The light is a lie</p>
+  <p id="timeDisplay">Time: 0s</p>
+  <button id="btnMainMenu" class="btn primary">MAIN MENU</button>
+</div>
+
+<!-- Elevator Transition Text -->
+<div id="elevatorText" class="hidden">ELEVATOR MOVING...</div>
+
+<canvas id="c"></canvas>
+
+<script type="module" src="main.js"></script>
+</body>
+</html>
