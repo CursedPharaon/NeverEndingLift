@@ -110,3 +110,65 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
   position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:16;
   color:#ff0000;font-size:18px;letter-spacing:4px;background:rgba(0,0,0,0.8);padding:12px 20px;border:1px solid #ff0000;
 }
+
+/* Rotate overlay - forces landscape on mobile */
+#rotateOverlay{
+  position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
+  background:#000;flex-direction:column;text-align:center;
+}
+#rotateOverlay.hidden{display:none !important}
+.rotateBox{display:flex;flex-direction:column;align-items:center;gap:12px}
+.rotateIcon{font-size:64px;color:#ff1a1a;animation: rotatePulse 1.2s infinite}
+@keyframes rotatePulse{0%,100%{transform:rotate(0deg)}50%{transform:rotate(90deg)}}
+#rotateOverlay h2{font-family:'Creepster',cursive;color:#ff1a1a;font-size:32px;letter-spacing:3px}
+#rotateOverlay p{color:#888;font-size:13px;letter-spacing:1px}
+
+/* Mobile controls */
+#mobileControls{
+  position:fixed;inset:0;z-index:12;pointer-events:none;
+}
+#mobileControls.hidden{display:none !important}
+#joystickZone{
+  position:absolute;left:18px;bottom:18px;width:128px;height:128px;
+  border-radius:50%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,0,0,0.35);
+  pointer-events:auto;touch-action:none;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 12px rgba(255,0,0,0.15) inset;
+}
+#joystickStick{
+  width:56px;height:56px;border-radius:50%;
+  background:radial-gradient(circle at 30% 30%, #ff3b3b, #7a0000);
+  border:1px solid rgba(255,255,255,0.6);
+  box-shadow:0 0 10px rgba(255,0,0,0.6);
+  transform:translate(0,0);
+  transition:transform 0.05s linear;
+  pointer-events:none;
+}
+#lookZone{
+  position:absolute;right:0;top:0;bottom:0;width:55%;
+  pointer-events:auto;touch-action:none;
+}
+#mobileActions{
+  position:absolute;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;
+  pointer-events:auto;
+}
+.mBtn{
+  width:64px;height:64px;border-radius:50%;
+  background:rgba(0,0,0,0.65);border:1.5px solid #ff1a1a;color:#ff3b3b;
+  font-family:'Share Tech Mono',monospace;font-size:20px;font-weight:bold;
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 0 10px rgba(255,0,0,0.3);touch-action:none;user-select:none;-webkit-user-select:none;
+}
+.mBtn:active{background:#ff1a1a;color:#000;transform:scale(0.96)}
+.mBtn.primary-m{
+  width:72px;height:72px;background:linear-gradient(#ff1a1a,#aa0000);color:#fff;font-size:22px;
+}
+.mBtn.primary-m:active{background:#fff;color:#ff0000}
+
+/* Hide crosshair slightly larger on mobile for visibility */
+.is-mobile #crosshair{width:22px;height:22px}
+.is-mobile #fpsHint{display:none !important}
+.is-mobile #fpsHintMobile{display:block !important;color:#666;font-size:9px;background:rgba(0,0,0,0.4);padding:3px 8px;border:1px solid #222}
+@media (max-width: 900px) and (orientation: portrait){
+  /* extra safety: blur game when rotate needed will be handled via JS overlay */
+}

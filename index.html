@@ -31,6 +31,28 @@
   <div id="inventory">INV: <span id="invText">empty</span></div>
   <div id="floorIndicator">FLOOR: --</div>
   <div id="fpsHint">WASD to move • Mouse to look • Click to interact • ESC to unlock mouse</div>
+  <div id="fpsHintMobile" style="display:none">Joystick left to move • Swipe right to look • Tap E to interact</div>
+</div>
+
+<!-- Rotate overlay for mobile portrait -->
+<div id="rotateOverlay" class="hidden">
+  <div class="rotateBox">
+    <div class="rotateIcon">⟲</div>
+    <h2>Поверни телефон</h2>
+    <p>Игра поддерживает только горизонтальный режим</p>
+  </div>
+</div>
+
+<!-- Mobile Controls -->
+<div id="mobileControls" class="hidden">
+  <div id="joystickZone">
+    <div id="joystickStick"></div>
+  </div>
+  <div id="lookZone"></div>
+  <div id="mobileActions">
+    <button id="btnJumpMobile" class="mBtn" aria-label="Jump">↑</button>
+    <button id="btnInteractMobile" class="mBtn primary-m" aria-label="Interact">E</button>
+  </div>
 </div>
 
 <!-- Main Menu -->
