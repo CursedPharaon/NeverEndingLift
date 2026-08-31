@@ -111,13 +111,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
   color:#ff0000;font-size:18px;letter-spacing:4px;background:rgba(0,0,0,0.8);padding:12px 20px;border:1px solid #ff0000;
 }
 
-/* Rotate overlay - forces landscape on mobile */
+/* Rotate overlay - now optional non-blocking hint (hidden by default after fix) */
 #rotateOverlay{
   position:fixed;inset:0;z-index:100;display:flex;align-items:center;justify-content:center;
-  background:#000;flex-direction:column;text-align:center;
+  background:rgba(0,0,0,0.92);flex-direction:column;text-align:center;
+  pointer-events:auto;
 }
 #rotateOverlay.hidden{display:none !important}
-.rotateBox{display:flex;flex-direction:column;align-items:center;gap:12px}
+.rotateBox{display:flex;flex-direction:column;align-items:center;gap:12px;padding:20px}
 .rotateIcon{font-size:64px;color:#ff1a1a;animation: rotatePulse 1.2s infinite}
 @keyframes rotatePulse{0%,100%{transform:rotate(0deg)}50%{transform:rotate(90deg)}}
 #rotateOverlay h2{font-family:'Creepster',cursive;color:#ff1a1a;font-size:32px;letter-spacing:3px}
@@ -169,6 +170,18 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
 .is-mobile #crosshair{width:22px;height:22px}
 .is-mobile #fpsHint{display:none !important}
 .is-mobile #fpsHintMobile{display:block !important;color:#666;font-size:9px;background:rgba(0,0,0,0.4);padding:3px 8px;border:1px solid #222}
+
+/* Portrait-friendly adjustments - keep joystick reachable with safe-area */
 @media (max-width: 900px) and (orientation: portrait){
-  /* extra safety: blur game when rotate needed will be handled via JS overlay */
+  #joystickZone{ left:12px; bottom:86px; width:132px; height:132px; }
+  #mobileActions{ right:12px; bottom:86px; }
+  #lookZone{ width:100%; height:60%; top:0; bottom:auto; }
+  #joystickStick{ width:60px; height:60px; }
+}
+@media (max-width: 600px){
+  #joystickZone{ width:118px; height:118px; left:10px; bottom:72px; }
+  #joystickStick{ width:52px; height:52px; }
+  .mBtn{ width:58px; height:58px; font-size:18px; }
+  .mBtn.primary-m{ width:66px; height:66px; font-size:20px; }
+  #mobileActions{ gap:8px; }
 }

@@ -31,15 +31,16 @@
   <div id="inventory">INV: <span id="invText">empty</span></div>
   <div id="floorIndicator">FLOOR: --</div>
   <div id="fpsHint">WASD to move • Mouse to look • Click to interact • ESC to unlock mouse</div>
-  <div id="fpsHintMobile" style="display:none">Joystick left to move • Swipe right to look • Tap E to interact</div>
+  <div id="fpsHintMobile" style="display:none">Джойстик слева — движение • Свайп справа/сверху — обзор • E — действие • ↑ — прыжок</div>
 </div>
 
-<!-- Rotate overlay for mobile portrait -->
+<!-- Rotate hint for mobile portrait (now non-blocking, hidden by default) -->
 <div id="rotateOverlay" class="hidden">
   <div class="rotateBox">
     <div class="rotateIcon">⟲</div>
     <h2>Поверни телефон</h2>
-    <p>Игра поддерживает только горизонтальный режим</p>
+    <p>Рекомендуется горизонтальный режим, но поддерживается и вертикальный</p>
+    <button id="btnContinuePortrait" class="btn small" style="margin-top:12px">Играть так</button>
   </div>
 </div>
 
