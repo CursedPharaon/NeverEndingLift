@@ -1,0 +1,112 @@
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:'Share Tech Mono',monospace;color:#ddd}
+#c{display:block;width:100vw;height:100vh}
+#vignette{
+  position:fixed;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(ellipse at center, transparent 45%, rgba(0,0,0,0.85) 85%, rgba(0,0,0,0.98) 100%);
+  opacity:0.95;
+}
+#chromatic{
+  position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;
+  background: linear-gradient(90deg, rgba(255,0,0,0.07) 0%, transparent 50%, rgba(0,255,255,0.07) 100%);
+  filter: blur(0px);
+  transition: opacity 0.2s;
+}
+#redFlash{
+  position:fixed;inset:0;background:#ff0000;opacity:0;pointer-events:none;z-index:20;transition:opacity 0.1s;
+}
+#blackFade{
+  position:fixed;inset:0;background:#000;opacity:0;pointer-events:none;z-index:15;transition:opacity 0.6s;
+}
+#blackFade.active{opacity:1;pointer-events:auto}
+#crosshair{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);
+  width:18px;height:18px;border:1.5px solid rgba(255,255,255,0.9);border-radius:50%;
+  z-index:6;pointer-events:none;box-shadow:0 0 6px rgba(255,255,255,0.6);
+}
+#crosshair::after{content:'';position:absolute;left:50%;top:50%;width:3px;height:3px;background:#fff;border-radius:50%;transform:translate(-50%,-50%)}
+#interactPrompt{
+  position:fixed;left:50%;top:57%;transform:translateX(-50%);
+  color:#ff3b3b;text-shadow:0 0 8px #ff0000;font-size:14px;letter-spacing:1px;
+  z-index:6;pointer-events:none;opacity:0;transition:opacity 0.2s;text-align:center;min-width:200px;
+}
+#hud{
+  position:fixed;top:0;left:0;right:0;z-index:7;pointer-events:none;
+  display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px;
+}
+#questLog{
+  background:rgba(0,0,0,0.7);border:1px solid #333;padding:8px 18px;
+  font-size:13px;letter-spacing:2px;color:#ff3333;text-transform:uppercase;
+  box-shadow:0 0 12px rgba(255,0,0,0.2);max-width:90vw;text-align:center;
+}
+#inventory,#floorIndicator{font-size:11px;letter-spacing:1px;color:#aaa;background:rgba(0,0,0,0.5);padding:4px 10px;border:1px solid #222}
+#fpsHint{font-size:10px;color:#555;margin-top:4px}
+.overlay{
+  position:fixed;inset:0;z-index:30;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(ellipse at center, #0a0a0f 0%, #000000 80%);
+}
+.menu-bg{
+  position:absolute;inset:0;opacity:0.15;
+  background:repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,0,0,0.03) 2px, rgba(255,0,0,0.03) 4px);
+  animation: scan 4s linear infinite;
+}
+@keyframes scan{0%{transform:translateY(0)}100%{transform:translateY(20px)}}
+#title{
+  font-family:'Creepster', cursive;font-size:68px;color:#ff0f0f;
+  text-shadow:0 0 20px rgba(255,0,0,0.6), 2px 2px 0 #000, 4px 4px 0 rgba(0,0,0,0.8);
+  letter-spacing:4px;position:relative;animation: flicker 3s infinite;
+}
+.subtitle{font-family:'Eater',cursive;color:#777;font-size:14px;letter-spacing:3px;margin:6px 0 26px}
+.glitch{position:relative}
+.glitch::before,.glitch::after{content:attr(data-text);position:absolute;left:0;top:0;width:100%;height:100%;overflow:hidden}
+.glitch::before{left:-2px;text-shadow:2px 0 #00ffff;clip-path:inset(0 0 60% 0);animation:glitch1 2.5s infinite}
+.glitch::after{left:2px;text-shadow:-2px 0 #ff00ff;clip-path:inset(60% 0 0 0);animation:glitch2 3s infinite}
+@keyframes glitch1{0%,100%{transform:translate(0)}20%{transform:translate(-1px,1px)}40%{transform:translate(1px,-1px)}60%{transform:translate(-1px,0)}}
+@keyframes glitch2{0%,100%{transform:translate(0)}30%{transform:translate(1px,0)}50%{transform:translate(-1px,1px)}}
+@keyframes flicker{0%,18%,22%,25%,53%,57%,100%{opacity:1}20%,24%,55%{opacity:0.6}}
+.menu-buttons{display:flex;flex-direction:column;gap:12px;z-index:1}
+.btn{
+  background:linear-gradient(#1a1a1a,#0a0a0a);border:1px solid #ff1a1a;color:#ff3b3b;
+  padding:12px 32px;font-family:'Share Tech Mono',monospace;font-size:15px;letter-spacing:3px;
+  cursor:pointer;transition:all 0.2s;min-width:220px;text-transform:uppercase;
+}
+.btn:hover{background:#ff1a1a;color:#000;box-shadow:0 0 16px rgba(255,0,0,0.7);transform:scale(1.03)}
+.btn.primary{background:linear-gradient(#ff1a1a,#aa0000);color:#fff;border-color:#ff4444;box-shadow:0 0 12px rgba(255,0,0,0.5)}
+.btn.primary:hover{background:#fff;color:#ff0000}
+.btn.small{padding:8px 18px;min-width:120px;font-size:12px}
+.panel{
+  margin-top:18px;background:rgba(20,0,0,0.9);border:1px solid #ff1a1a;padding:16px 20px;
+  width:320px;max-width:90vw;display:flex;flex-direction:column;gap:12px;z-index:1;
+}
+.panel h3{color:#ff3b3b;letter-spacing:2px;font-size:14px;text-align:center}
+.panel label{display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#ccc;gap:10px}
+.panel input[type=range]{flex:1}
+.hint{margin-top:18px;font-size:10px;color:#555;letter-spacing:1px;z-index:1;text-align:center}
+.hidden{display:none !important}
+.modal{
+  position:fixed;inset:0;z-index:40;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.85);
+}
+.modal-content{
+  background:#0a0a0a;border:2px solid #ff1a1a;padding:28px;min-width:340px;text-align:center;
+  box-shadow:0 0 30px rgba(255,0,0,0.4);
+}
+.modal-content h2{color:#ff3b3b;letter-spacing:3px;font-size:16px;margin-bottom:10px}
+.codeHint{color:#ffcc00;font-size:12px;margin-bottom:12px;letter-spacing:1px}
+#safeInput{
+  background:#000;border:1px solid #ff1a1a;color:#ff3b3b;font-family:'Share Tech Mono',monospace;
+  font-size:28px;letter-spacing:8px;text-align:center;padding:10px;width:180px;text-transform:uppercase;
+}
+.modal-buttons{display:flex;gap:12px;justify-content:center;margin-top:14px}
+#safeMsg{margin-top:10px;font-size:12px;min-height:16px}
+#jumpscare{
+  position:fixed;inset:0;z-index:50;background:#000;display:flex;flex-direction:column;align-items:center;justify-content:center;
+}
+#jumpscareCanvas{max-width:90vw;max-height:60vh;border:2px solid #ff0000;box-shadow:0 0 40px #ff0000}
+#jumpscareText{font-family:'Creepster',cursive;font-size:58px;color:#ff0000;margin:16px;text-shadow:0 0 20px #ff0000;animation:flicker 0.2s infinite}
+#winScreen .winTitle{font-family:'Creepster',cursive;font-size:64px;color:#fff;text-shadow:0 0 30px #fff;animation:flicker 2s infinite}
+.winSubtitle{color:#aaa;letter-spacing:4px;margin:8px}
+#timeDisplay{font-size:18px;color:#ffcc00;margin:16px;letter-spacing:2px}
+#elevatorText{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:16;
+  color:#ff0000;font-size:18px;letter-spacing:4px;background:rgba(0,0,0,0.8);padding:12px 20px;border:1px solid #ff0000;
+}
