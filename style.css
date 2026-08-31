@@ -135,6 +135,7 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
   pointer-events:auto;touch-action:none;
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 0 12px rgba(255,0,0,0.15) inset;
+  z-index:2;
 }
 #joystickStick{
   width:56px;height:56px;border-radius:50%;
@@ -146,12 +147,14 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
   pointer-events:none;
 }
 #lookZone{
-  position:absolute;right:0;top:0;bottom:0;width:55%;
+  position:absolute;inset:0;
   pointer-events:auto;touch-action:none;
+  z-index:1;
 }
 #mobileActions{
   position:absolute;right:18px;bottom:18px;display:flex;flex-direction:column;gap:10px;
   pointer-events:auto;
+  z-index:2;
 }
 .mBtn{
   width:64px;height:64px;border-radius:50%;
@@ -175,7 +178,6 @@ html,body{width:100%;height:100%;overflow:hidden;background:#060607;font-family:
 @media (max-width: 900px) and (orientation: portrait){
   #joystickZone{ left:12px; bottom:86px; width:132px; height:132px; }
   #mobileActions{ right:12px; bottom:86px; }
-  #lookZone{ width:100%; height:60%; top:0; bottom:auto; }
   #joystickStick{ width:60px; height:60px; }
 }
 @media (max-width: 600px){
