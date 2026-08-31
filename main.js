@@ -11,6 +11,8 @@ const invText = document.getElementById('invText');
 const floorIndicator = document.getElementById('floorIndicator');
 const interactPrompt = document.getElementById('interactPrompt');
 const elevatorText = document.getElementById('elevatorText');
+const codeDisplay = document.getElementById('codeDisplay');
+const codeDisplayText = document.getElementById('codeDisplayText');
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -379,10 +381,19 @@ function updateInventoryUI(){
   else invText.textContent=gameState.inventory.join(' + ');
 }
 function setQuest(t){ questLog.textContent=t; questLog.animate([{transform:'scale(1)'},{transform:'scale(1.06)'},{transform:'scale(1)'}],{duration:300}); }
+function showCodeDisplay(code){
+  if(codeDisplay && codeDisplayText){
+    codeDisplayText.textContent = code;
+    codeDisplay.classList.remove('hidden');
+  }
+}
+function hideCodeDisplay(){
+  if(codeDisplay) codeDisplay.classList.add('hidden');
+}
 
 // Floor 1
 function buildFloor1(){
-  clearScene(); gameState.currentFloor=1; floorIndicator.textContent='FLOOR: 1 - MAINTENANCE';
+  clearScene(); hideCodeDisplay(); gameState.currentFloor=1; floorIndicator.textContent='FLOOR: 1 - MAINTENANCE';
   setQuest('NEED TO FIX THE ELEVATOR. FIND TOOLS.');
   const tex=createWallTexture(['HELP ME','DIE','666','HE IS HERE','DON\'T LOOK']);
   addWallsRoom(10,3.2,8, tex);
@@ -438,6 +449,7 @@ function buildFloor1(){
 
   // Elevator - improved with frame, panels, button box and indicator
   elevatorGroup=new THREE.Group(); elevatorGroup.position.set(3.2,0,2.5);
+  elevatorGroup.rotation.y = Math.PI;
   const elevFrame=new THREE.Mesh(new THREE.BoxGeometry(1.9,2.35,1.5), new THREE.MeshStandardMaterial({color:0x1f1f1f, metalness:0.55, roughness:0.45}));
   elevFrame.position.y=1.15; elevFrame.castShadow=true; elevFrame.receiveShadow=true; elevatorGroup.add(elevFrame);
   // side trim
@@ -526,7 +538,7 @@ function doFadeTransition(next){
 // Floor 2 - Nursery
 let whisperInterval;
 function buildFloor2(){
-  clearScene(); gameState.currentFloor=2; floorIndicator.textContent='FLOOR: 2 - NURSERY';
+  clearScene(); hideCodeDisplay(); gameState.currentFloor=2; floorIndicator.textContent='FLOOR: 2 - NURSERY';
   setQuest('FIND THE CODE AND OPEN THE SAFE. Search furniture!');
   // generate code
   const letters='ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -631,6 +643,7 @@ function buildFloor2(){
 
   // Elevator for this floor - improved
   elevatorGroup=new THREE.Group(); elevatorGroup.position.set(6.2,0,0);
+  elevatorGroup.rotation.y = Math.PI;
   const elevBox=new THREE.Mesh(new THREE.BoxGeometry(1.7,2.35,1.45), new THREE.MeshStandardMaterial({color:0x1a1a1a, metalness:0.65, roughness:0.4}));
   elevBox.position.y=1.175; elevBox.castShadow=true; elevBox.receiveShadow=true; elevatorGroup.add(elevBox);
   const lD=new THREE.Mesh(new THREE.BoxGeometry(0.82,2.1,0.08), new THREE.MeshStandardMaterial({color:0x4a4a4a, metalness:0.72, roughness:0.28})); lD.position.set(-0.41,1.15,0.75); lD.castShadow=true; elevatorGroup.add(lD);
@@ -695,6 +708,7 @@ function takeKey(meshGroup){
   interactables = interactables.filter(i=>i.mesh!==meshGroup);
   scene.remove(meshGroup);
   document.getElementById('codeHint').textContent = `CODE IS: ${gameState.safeCode} — Remember it!`;
+  showCodeDisplay(gameState.safeCode);
   setQuest(`Code revealed: ${gameState.safeCode} — Open the safe!`);
   audio.playThud();
 }
@@ -727,6 +741,7 @@ function submitSafe(){
     // also open elevator doors slightly green
     elevatorDoors.forEach(d=> d.material.emissive=new THREE.Color(0x00ff00), d.material.emissiveIntensity=0.25);
     setQuest('Safe opened! The elevator is now green. Enter it.');
+    hideCodeDisplay();
     audio.playThud();
     setTimeout(closeSafePrompt, 900);
   } else {
@@ -767,7 +782,7 @@ async function tryEnterElevatorF2(){
 // Floor 662 - Chase - enhanced horror corridor
 function buildFloor662(){
   clearInterval(whisperInterval);
-  clearScene(); gameState.currentFloor=662; floorIndicator.textContent='FLOOR: 662 — RUN!';
+  clearScene(); hideCodeDisplay(); gameState.currentFloor=662; floorIndicator.textContent='FLOOR: 662 — RUN!';
   setQuest('RUN!'); scene.fog = new THREE.Fog(0x020202, 4, 28);
   // corridor
   corridorGroup=new THREE.Group();
@@ -959,7 +974,7 @@ function buildElevatorToFloor3(){
 // Floor 3 - Toy
 let bearStage=0; //0 before bed,1 on bed,2 vanished,3 in sink
 function buildFloor3(){
-  clearScene(); gameState.currentFloor=3; bearStage=0; floorIndicator.textContent='FLOOR: 3 - THE TOY';
+  clearScene(); hideCodeDisplay(); gameState.currentFloor=3; bearStage=0; floorIndicator.textContent='FLOOR: 3 - THE TOY';
   setQuest('FIND THE TOY.');
   const tex=createWallTexture(['LEAVE','SHE IS HERE','WHAT DID YOU DO?','']);
   addWallsRoom(12,3.2,10, tex);
@@ -995,6 +1010,7 @@ function buildFloor3(){
   scene.userData.sinkPos=new THREE.Vector3(1.8,0.95,3.6);
   // elevator - improved
   elevatorGroup=new THREE.Group(); elevatorGroup.position.set(5.0,0, -3.8);
+  elevatorGroup.rotation.y = Math.PI;
   const eBox=new THREE.Mesh(new THREE.BoxGeometry(1.7,2.35,1.35), new THREE.MeshStandardMaterial({color:0x222222, metalness:0.55, roughness:0.4})); eBox.position.y=1.175; eBox.castShadow=true; elevatorGroup.add(eBox);
   const lD=new THREE.Mesh(new THREE.BoxGeometry(0.82,2.1,0.08), new THREE.MeshStandardMaterial({color:0x444444, metalness:0.65})); lD.position.set(-0.41,1.15,0.70); lD.castShadow=true; elevatorGroup.add(lD);
   const rD=new THREE.Mesh(new THREE.BoxGeometry(0.82,2.1,0.08), new THREE.MeshStandardMaterial({color:0x444444, metalness:0.65})); rD.position.set(0.41,1.15,0.70); rD.castShadow=true; elevatorGroup.add(rD);
@@ -1097,7 +1113,7 @@ function clickBearSink(){
 
 // Floor 4 - Final Door
 function buildFloor4(){
-  clearScene(); gameState.currentFloor=4; floorIndicator.textContent='FLOOR: 4 - THE FINAL DOOR';
+  clearScene(); hideCodeDisplay(); gameState.currentFloor=4; floorIndicator.textContent='FLOOR: 4 - THE FINAL DOOR';
   setQuest('OPEN THE DOOR.');
   const tex=createWallTexture(['NO ESCAPE','TURN BACK','']);
   addWallsRoom(8,3.4,8, tex);
@@ -1347,7 +1363,7 @@ function updateEffects(dt, elapsed){
 
 // Menu background 3D scene (elevator shaft) - enhanced with lights and depth
 function buildMenuBackground(){
-  clearScene();
+  clearScene(); hideCodeDisplay();
   menuAnimGroup=new THREE.Group();
   // shaft walls with emissive strips
   for(let i=0;i<6;i++){
@@ -1362,6 +1378,7 @@ function buildMenuBackground(){
   const eDoorL=new THREE.Mesh(new THREE.BoxGeometry(0.92,2.1,0.06), new THREE.MeshStandardMaterial({color:0x4a4a4a, metalness:0.7})); eDoorL.position.set(-0.46,1.15,0.98); elev.add(eDoorL);
   const eDoorR=eDoorL.clone(); eDoorR.position.x=0.46; elev.add(eDoorR);
   const elevLight=new THREE.PointLight(0xffaa88, 2.2, 6); elevLight.position.set(0,2.3,0.3); elev.add(elevLight);
+  elev.rotation.y = Math.PI;
   menuAnimGroup.add(elev);
   // floating dust particles (small spheres)
   for(let i=0;i<22;i++){
