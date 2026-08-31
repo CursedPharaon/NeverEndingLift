@@ -412,6 +412,7 @@ function buildFloor1(){
   colliders.push(elevFrame);
 
   camera.position.set(0, playerHeight, 3.5); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
   gameState.flashlightOn=true; flashlight.intensity=28;
 }
 
@@ -526,6 +527,7 @@ function buildFloor2(){
   interactables.push({mesh:elevBox, type:'elevatorF2', prompt:'Enter elevator (needs safe opened)'});
 
   camera.position.set(0, playerHeight, 4); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
 
   // whisper intervals
   clearInterval(whisperInterval);
@@ -706,6 +708,7 @@ function buildFloor662(){
 
   gameState.monsterPos=-14; gameState.monsterActive=true; gameState.chaseStarted=true; gameState.wardrobeFallen=false; gameState.chandelierDropped=false;
   camera.position.set(0, playerHeight, -6); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
   chromatic.style.opacity='0.18';
   // start chase audio loop
   audio.playScreech(0.6);
@@ -828,6 +831,7 @@ function buildFloor3(){
   sinkBearMesh = createBearMesh(); sinkBearMesh.scale.set(0.85,0.85,0.85); sinkBearMesh.position.set(1.8,1.05,3.6); sinkBearMesh.visible=false; sinkBearMesh.userData.type='bearSink'; scene.add(sinkBearMesh);
 
   camera.position.set(0,playerHeight,2); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
   // blood decals on wall near bathroom
   updateInventoryUI();
 }
@@ -916,6 +920,7 @@ function buildFloor4(){
   interactables.push({mesh:finalDoorMesh, type:'finalDoor', prompt: gameState.hasKey ? 'Open door (Key ready)' : 'Open door (Need Key from Floor 3 sink!)'});
 
   camera.position.set(0,playerHeight,2.5); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
   // subtle whisper
   setTimeout(()=> audio.playWhisper(), 1200);
 }
@@ -1037,7 +1042,6 @@ function updateHover(){
 // Movement with simple collision (bounds)
 function updateMovement(dt){
   if((!isPointerLocked && !isMobile) || gameState.inTransition || isSafeOpen) return;
-  if(isMobile && document.getElementById('rotateOverlay') && !document.getElementById('rotateOverlay').classList.contains('hidden')) return;
   const speed=  gameState.currentFloor===662? 4.6 : 2.9;
   const ctrlObj = controls.getObject();
   const forward = new THREE.Vector3(); ctrlObj.getWorldDirection(forward); forward.y=0; forward.normalize();
@@ -1054,8 +1058,13 @@ function updateMovement(dt){
     strafeInput += joystickVector.x;
   }
   const inputVec = new THREE.Vector3(strafeInput, 0, fwdInput);
-  const hasInput = inputVec.length() > 0;
-  if(hasInput) inputVec.normalize().multiplyScalar(speed*dt);
+  const mag = inputVec.length();
+  const hasInput = mag > 0.01;
+  if(hasInput){
+    // analog support: keep joystick magnitude, clamp only if >1 (keyboard + joystick combine)
+    if(mag > 1) inputVec.normalize().multiplyScalar(speed*dt);
+    else inputVec.multiplyScalar(speed*dt);
+  }
   const delta = new THREE.Vector3();
   if(hasInput){
     delta.addScaledVector(forward, inputVec.z);
@@ -1097,7 +1106,8 @@ function updateEffects(dt, elapsed){
   if(!gameState.started) return;
   // breathing bob even standing
   const breath = Math.sin(elapsed*0.0017)*0.025 + Math.sin(elapsed*0.0011)*0.015;
-  camera.position.y = playerHeight + breath + (moveForward||moveBack||moveLeft||moveRight ? Math.sin(elapsed*0.008)*0.04 : 0);
+  const isMoving = moveForward||moveBack||moveLeft||moveRight || (isMobile && Math.hypot(joystickVector.x, joystickVector.y) > 0.12);
+  camera.position.y = playerHeight + breath + (isMoving ? Math.sin(elapsed*0.008)*0.04 : 0);
   controls.getObject().position.y = camera.position.y;
 
   // flashlight attached to camera
@@ -1167,7 +1177,7 @@ function animate(){
 }
 animate();
 
-// Orientation handling - require landscape on mobile
+// Orientation handling - allow both portrait and landscape on mobile
 function isPortrait(){
   return window.innerHeight > window.innerWidth;
 }
@@ -1178,15 +1188,16 @@ function checkOrientation(){
     if(overlay) overlay.classList.add('hidden');
     return;
   }
-  if(isPortrait()){
-    overlay.classList.remove('hidden');
-    if(mControls) mControls.classList.add('hidden');
-  } else {
-    overlay.classList.add('hidden');
-    if(gameState.started) {
-      if(mControls) mControls.classList.remove('hidden');
-    }
+  // Never block gameplay with overlay - show controls in any orientation
+  // Keep overlay hidden; it is now an optional hint only, not blocking input
+  if(overlay) overlay.classList.add('hidden');
+  if(mControls && gameState.started){
+    mControls.classList.remove('hidden');
   }
+}
+// kept for optional hint - not used to block controls
+function showRotateHintIfPortrait(){
+  // optional non-blocking hint - currently disabled to not annoy user
 }
 async function tryLockLandscape(){
   if(!isMobile) return;
@@ -1210,8 +1221,16 @@ function syncMobileYawPitch(){
   pitch = euler.x;
 }
 
+function resetMobileView(){
+  yaw = 0; pitch = 0;
+  camera.rotation.order='YXZ';
+  camera.rotation.set(0,0,0);
+  controls.getObject().rotation.set(0,0,0);
+  syncMobileYawPitch();
+}
+
 function applyMobileLook(deltaX, deltaY){
-  const sensitivity = 0.0027;
+  const sensitivity = 0.0038;
   yaw -= deltaX * sensitivity;
   pitch -= deltaY * sensitivity;
   const maxPitch = Math.PI/2 - 0.08;
@@ -1236,9 +1255,8 @@ function initMobileControls(){
 
   if(!joystickZone || !lookZone) return;
 
-  // Joystick handling
-  let joyActive = false;
-  let joyCenter = {x:0,y:0};
+  // Joystick handling with multitouch identifiers
+  let joyTouchId = null;
   const maxRadius = 52;
 
   function getCenter(){
@@ -1259,7 +1277,7 @@ function initMobileControls(){
     joystickVector.x = cx / maxRadius;
     joystickVector.y = cy / maxRadius;
     // deadzone
-    if(Math.hypot(joystickVector.x, joystickVector.y) < 0.12){
+    if(Math.hypot(joystickVector.x, joystickVector.y) < 0.14){
       joystickVector.x=0; joystickVector.y=0;
     }
     // update discrete flags for compatibility (optional)
@@ -1269,29 +1287,40 @@ function initMobileControls(){
     moveRight = joystickVector.x > 0.25;
   }
   function resetJoy(){
-    joyActive=false;
+    joyTouchId=null;
     joystickVector.x=0; joystickVector.y=0;
     moveForward=moveBack=moveLeft=moveRight=false;
     joystickStick.style.transform='translate(0,0)';
   }
 
+  function findTouchById(list, id){
+    for(let i=0;i<list.length;i++) if(list[i].identifier===id) return list[i];
+    return null;
+  }
+
   joystickZone.addEventListener('touchstart', e=>{
+    if(joyTouchId!==null) return;
     e.preventDefault();
-    joyActive=true;
-    const t=e.touches[0];
+    const t=e.changedTouches[0];
+    joyTouchId=t.identifier;
     handleJoyMove(t.clientX, t.clientY);
   }, {passive:false});
   joystickZone.addEventListener('touchmove', e=>{
-    if(!joyActive) return;
+    if(joyTouchId===null) return;
     e.preventDefault();
-    const t=e.touches[0];
+    const t=findTouchById(e.touches, joyTouchId) || findTouchById(e.changedTouches, joyTouchId);
+    if(!t) return;
     handleJoyMove(t.clientX, t.clientY);
   }, {passive:false});
-  joystickZone.addEventListener('touchend', e=>{
+  const endJoy = e=>{
+    if(joyTouchId===null) return;
+    const t=findTouchById(e.changedTouches, joyTouchId);
+    if(!t) return;
     e.preventDefault();
     resetJoy();
-  }, {passive:false});
-  joystickZone.addEventListener('touchcancel', resetJoy, {passive:false});
+  };
+  joystickZone.addEventListener('touchend', endJoy, {passive:false});
+  joystickZone.addEventListener('touchcancel', endJoy, {passive:false});
 
   // Mouse fallback for testing on desktop with isMobile forced
   let mouseJoy=false;
@@ -1299,52 +1328,66 @@ function initMobileControls(){
   window.addEventListener('mousemove', e=>{ if(mouseJoy) handleJoyMove(e.clientX,e.clientY); });
   window.addEventListener('mouseup', ()=>{ if(mouseJoy){ mouseJoy=false; resetJoy(); }});
 
-  // Look handling (right side swipe)
+  // Look handling (right side swipe) with identifier tracking
   let lastLookX=0, lastLookY=0;
-  let lookActive=false;
+  let lookTouchId=null;
 
   function onLookStart(x,y){
-    lookActive=true; lastLookX=x; lastLookY=y;
+    lastLookX=x; lastLookY=y;
+    // sync yaw/pitch on first touch of this gesture
     syncMobileYawPitch();
   }
   function onLookMove(x,y){
-    if(!lookActive) return;
     const dx = x - lastLookX;
     const dy = y - lastLookY;
     lastLookX=x; lastLookY=y;
     applyMobileLook(dx, dy);
   }
-  function onLookEnd(){ lookActive=false; }
 
   lookZone.addEventListener('touchstart', e=>{
-    e.preventDefault();
-    const t=e.touches[0];
-    // ignore if touching buttons area
+    if(lookTouchId!==null) return;
     if(e.target.closest('#mobileActions')) return;
+    e.preventDefault();
+    const t=e.changedTouches[0];
+    lookTouchId=t.identifier;
     onLookStart(t.clientX, t.clientY);
   }, {passive:false});
   lookZone.addEventListener('touchmove', e=>{
+    if(lookTouchId===null) return;
     e.preventDefault();
-    const t=e.touches[0];
+    const t=findTouchById(e.touches, lookTouchId) || findTouchById(e.changedTouches, lookTouchId);
+    if(!t) return;
     onLookMove(t.clientX, t.clientY);
   }, {passive:false});
-  lookZone.addEventListener('touchend', onLookEnd, {passive:false});
-  lookZone.addEventListener('touchcancel', onLookEnd, {passive:false});
+  function endLook(e){
+    if(lookTouchId===null) return;
+    const t=findTouchById(e.changedTouches, lookTouchId);
+    if(!t) return;
+    e.preventDefault();
+    lookTouchId=null;
+  }
+  lookZone.addEventListener('touchend', endLook, {passive:false});
+  lookZone.addEventListener('touchcancel', endLook, {passive:false});
 
-  // also allow look by dragging on whole right half fallback (outside lookZone for some devices)
   // buttons
   if(btnInteract){
     btnInteract.addEventListener('touchstart', e=>{ e.preventDefault(); handleInteract(); }, {passive:false});
+    btnInteract.addEventListener('touchend', e=> e.preventDefault(), {passive:false});
     btnInteract.addEventListener('click', e=>{ e.preventDefault(); handleInteract(); });
   }
   if(btnJump){
     const doJump= (e)=>{ e.preventDefault(); if(onGround){ playerVelocityY=4.5; onGround=false; } };
     btnJump.addEventListener('touchstart', doJump, {passive:false});
+    btnJump.addEventListener('touchend', e=> e.preventDefault(), {passive:false});
     btnJump.addEventListener('click', doJump);
   }
 
-  // Prevent scrolling/zoom on mobile controls
-  document.getElementById('mobileControls')?.addEventListener('touchmove', e=> e.preventDefault(), {passive:false});
+  // Prevent scrolling/zoom on mobile controls (but allow joystick/look to handle their own preventDefault)
+  // Use passive:false globally on mobileControls for safety
+  document.getElementById('mobileControls')?.addEventListener('touchmove', e=>{
+    // only prevent if not already handled - this is fallback
+    // do not prevent if target is inside joystick or look (they already prevented)
+  }, {passive:false});
 
   // Initialize hidden until game start
   document.getElementById('mobileControls').classList.add('hidden');
@@ -1364,21 +1407,24 @@ function startGame(){
   updateInventoryUI();
   buildFloor1();
   if(isMobile){
-    // require landscape - try lock and show controls
+    // optional landscape lock - don't block portrait play
     tryLockLandscape();
-    // try fullscreen for immersive landscape
+    // try fullscreen for immersive experience (ignore if fails)
     try{
       if(document.documentElement.requestFullscreen && !document.fullscreenElement){
         document.documentElement.requestFullscreen().catch(()=>{});
       }
     }catch(e){}
+    // reset mobile look to forward
+    yaw = 0; pitch = 0;
+    camera.rotation.order='YXZ';
+    camera.rotation.set(0,0,0);
+    controls.getObject().rotation.set(0,0,0);
     syncMobileYawPitch();
     isPointerLocked = true;
+    // always show controls regardless of orientation
+    document.getElementById('mobileControls')?.classList.remove('hidden');
     checkOrientation();
-    // show controls if landscape
-    if(!isPortrait()){
-      document.getElementById('mobileControls')?.classList.remove('hidden');
-    }
     document.getElementById('fpsHintMobile').style.display='block';
   } else {
     controls.lock();
@@ -1412,6 +1458,11 @@ window.addEventListener('resize', ()=>{
   camera.aspect=window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
   checkOrientation();
+});
+
+document.getElementById('btnContinuePortrait')?.addEventListener('click', ()=>{
+  document.getElementById('rotateOverlay')?.classList.add('hidden');
+  document.getElementById('mobileControls')?.classList.remove('hidden');
 });
 
 // Prevent context menu on right click
