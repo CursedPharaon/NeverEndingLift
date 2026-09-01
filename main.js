@@ -13,6 +13,7 @@ const interactPrompt = document.getElementById('interactPrompt');
 const elevatorText = document.getElementById('elevatorText');
 const codeDisplay = document.getElementById('codeDisplay');
 const codeDisplayText = document.getElementById('codeDisplayText');
+const runOverlay = document.getElementById('runOverlay');
 
 // Scene setup
 const scene = new THREE.Scene();
@@ -32,6 +33,9 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 // Lighting
 const ambient = new THREE.AmbientLight(0x111111, 1.2);
 scene.add(ambient);
+let extraRoomLight = new THREE.PointLight(0xfff2cc, 0, 12);
+extraRoomLight.position.set(0,2.8,0);
+scene.add(extraRoomLight);
 let flashlight, flashTarget;
 function setupFlashlight(){
   flashlight = new THREE.SpotLight(0xfff6d6, 28, 22, Math.PI/5.5, 0.35, 1);
@@ -52,6 +56,63 @@ function setupFlashlight(){
 }
 setupFlashlight();
 
+function applyDifficultyLighting(){
+  // called after building floor or when difficulty changes
+  const fill = camera.children.find(c=>c.isPointLight);
+  if(gameDifficulty==='easy'){
+    ambient.intensity = 2.4;
+    extraRoomLight.intensity = 2.8;
+    extraRoomLight.color.set(0xfff6d6);
+    if(fill) fill.intensity = 0.6;
+    if(flashlight){ flashlight.intensity = 0; flashlight.visible=false; }
+    scene.fog = new THREE.Fog(0x1a1a1a, 18, 55);
+    vignette.style.opacity='0.35';
+  } else if(gameDifficulty==='hard'){
+    ambient.intensity = 0.22;
+    extraRoomLight.intensity = 0;
+    if(fill) fill.intensity = 0.35;
+    if(flashlight){ flashlight.visible=true; flashlight.intensity = 30; flashlight.angle = Math.PI/7; flashlight.distance=14; }
+    // fog stays as set by floor, but darker
+    vignette.style.opacity='0.96';
+  } else {
+    // normal
+    ambient.intensity = 1.2;
+    extraRoomLight.intensity = 0;
+    if(fill) fill.intensity = 1.2;
+    if(flashlight){ flashlight.visible=true; flashlight.intensity = 28; flashlight.angle = Math.PI/5.5; flashlight.distance=22; }
+    vignette.style.opacity='0.95';
+  }
+  // floor 662 overrides: keep dark except easy still bright
+  if(gameState && gameState.currentFloor===662 && gameDifficulty!=='easy'){
+    ambient.intensity = 0.35;
+  }
+}
+function getDifficultySpeedMul(){
+  if(gameDifficulty==='easy') return 1.22;
+  if(gameDifficulty==='hard') return 0.92;
+  return 1.0;
+}
+function getChaseSpeedMul(){
+  if(gameDifficulty==='easy') return 0.62;
+  if(gameDifficulty==='hard') return 1.35;
+  return 1.0;
+}
+function setMouseSensitivity(v){
+  mouseSensitivity = parseFloat(v);
+  localStorage.setItem('nel_sens', mouseSensitivity);
+  controls.pointerSpeed = mouseSensitivity;
+  const sv=document.getElementById('sensValue'); if(sv) sv.textContent = mouseSensitivity.toFixed(1);
+}
+function setDifficulty(v){
+  gameDifficulty = v;
+  localStorage.setItem('nel_difficulty', v);
+  applyDifficultyLighting();
+  // re-apply for current floor fog overrides
+  if(gameState && gameState.currentFloor) {
+    // re-trigger floor fog if needed? keep current but lighting updated
+  }
+}
+
 // Mobile detection
 const isMobile = (() => {
   const ua = navigator.userAgent || navigator.vendor || window.opera;
@@ -62,8 +123,13 @@ const isMobile = (() => {
 })();
 if(isMobile) document.body.classList.add('is-mobile');
 
+// Difficulty & Sensitivity state
+let gameDifficulty = localStorage.getItem('nel_difficulty') || 'normal';
+let mouseSensitivity = parseFloat(localStorage.getItem('nel_sens') || '1.0');
+
 // Controls
 const controls = new PointerLockControls(camera, document.body);
+controls.pointerSpeed = mouseSensitivity;
 let moveForward=false, moveBack=false, moveLeft=false, moveRight=false, canJump=false;
 const velocity = new THREE.Vector3();
 const direction = new THREE.Vector3();
@@ -311,7 +377,9 @@ const gameState = {
   started:false, currentFloor:0, inventory:[], hasToolbox:false, hasKey:false, hasToy:false,
   safeCode:'', safeOpened:false, keySpawned:false,
   inTransition:false, startTime:0, flashlightOn:true, flickerUntil:0,
-  monsterPos:-30, monsterActive:false, chaseStarted:false, wardrobeFallen:false, chandelierDropped:false
+  monsterPos:-30, monsterActive:false, chaseStarted:false, wardrobeFallen:false, chandelierDropped:false,
+  // new floors progress
+  collectedKeys:new Set(), extraFloorsCompleted:new Set(), totalExtraFloors:10
 };
 
 let interactables=[]; let colliders=[];
@@ -326,8 +394,15 @@ let finalDoorGroup, finalDoorMesh;
 let menuAnimGroup;
 
 function clearScene(){
-  interactables=[]; colliders=[];
-  const toRemove=[]; scene.traverse(o=>{ if(o.isMesh||o.isGroup) { if(o !== camera && o !== flashlight && o !== flashTarget && !o.isLight) toRemove.push(o);} });
+  interactables=[]; colliders=[]; extraMazeWalls=[];
+  // hide run overlay when leaving 662
+  hideRunOverlay();
+  if(window._extraKeys) window._extraKeys.forEach(k=>{ if(k.userData.glow) scene.remove(k.userData.glow); });
+  window._extraKeys=[];
+  if(gameState.clockInterval) {clearInterval(gameState.clockInterval); gameState.clockInterval=null;}
+  if(scene.userData.voiceInt){ clearInterval(scene.userData.voiceInt); scene.userData.voiceInt=null; }
+  scene.userData.shadows=null; scene.userData.timerLight=null;
+  const toRemove=[]; scene.traverse(o=>{ if(o.isMesh||o.isGroup) { if(o !== camera && o !== flashlight && o !== flashTarget && !o.isLight && o !== extraRoomLight) toRemove.push(o);} });
   // Keep lights and camera
   toRemove.forEach(o=>{ if(o.parent) o.parent.remove(o); });
   // remove groups
@@ -483,6 +558,8 @@ function buildFloor1(){
   camera.position.set(0, playerHeight, 3.5); controls.getObject().position.copy(camera.position);
   if(isMobile) resetMobileView();
   gameState.flashlightOn=true; flashlight.intensity=28;
+  applyDifficultyLighting();
+  if(gameDifficulty==='easy') gameState.flashlightOn=true;
 }
 
 function openCabinet(){
@@ -664,6 +741,7 @@ function buildFloor2(){
   whisperInterval=setInterval(()=>{ if(gameState.currentFloor===2 && Math.random()<0.42) audio.playWhisper(); }, 4200 + Math.random()*3500);
 
   updateInventoryUI();
+  applyDifficultyLighting();
 }
 
 function searchFurniture(group){
@@ -779,11 +857,18 @@ async function tryEnterElevatorF2(){
   buildFloor662(); gameState.inTransition=false; blackFade.classList.remove('active');
 }
 
-// Floor 662 - Chase - enhanced horror corridor
+// Floor 662 - Chase - enhanced horror corridor - SLOW & CLEAR VERSION
 function buildFloor662(){
   clearInterval(whisperInterval);
   clearScene(); hideCodeDisplay(); gameState.currentFloor=662; floorIndicator.textContent='FLOOR: 662 — RUN!';
-  setQuest('RUN!'); scene.fog = new THREE.Fog(0x020202, 4, 28);
+  scene.fog = new THREE.Fog(0x020202, 4, 28);
+  // show big RUN overlay with slow explanation
+  if(runOverlay){ runOverlay.classList.remove('hidden'); }
+  // staged quest hints - slower and clearer
+  setQuest('ЭТАЖ 662 — МЕДЛЕННО И ПОНЯТНО: БЕГИ ВПЕРЁД (W)!');
+  setTimeout(()=> setQuest('Нажми и держи W — монстр МЕДЛЕННЫЙ, у тебя много времени'), 3500);
+  setTimeout(()=> setQuest('Беги к шкафу впереди (42м) — шкаф упадёт и преградит путь монстру'), 8000);
+  setTimeout(()=> setQuest('Когда шкаф упадёт — РАЗВЕРНИСЬ и беги назад, люстра упадёт на монстра'), 14000);
   // corridor
   corridorGroup=new THREE.Group();
   const corrLen=110; const corrW=3.2; const corrH=3.0;
@@ -879,22 +964,39 @@ function buildFloor662(){
   monsterGroup.userData.eyes= monsterGroup.children.filter(c=>c.userData.isEye);
   scene.add(monsterGroup);
 
-  gameState.monsterPos=-14; gameState.monsterActive=true; gameState.chaseStarted=true; gameState.wardrobeFallen=false; gameState.chandelierDropped=false;
+  gameState.monsterPos=-18; gameState.monsterActive=true; gameState.chaseStarted=true; gameState.wardrobeFallen=false; gameState.chandelierDropped=false;
   camera.position.set(0, playerHeight, -6); controls.getObject().position.copy(camera.position);
   if(isMobile) resetMobileView();
-  chromatic.style.opacity='0.18';
-  // start chase audio loop
-  audio.playScreech(0.6);
-  setQuest('RUN! — W A S D — Don\'t look back!');
+  chromatic.style.opacity='0.12';
+  // start chase audio loop - delayed and softer for slower atmosphere
+  setTimeout(()=> audio.playScreech(0.6), 1200);
+  // hide RUN overlay after 10 sec slowly, keep hint
+  setTimeout(()=>{
+    if(runOverlay && gameState.currentFloor===662){
+      runOverlay.style.transition='opacity 1.2s';
+      runOverlay.style.opacity='0.28';
+    }
+  }, 10000);
+  setTimeout(()=>{
+    if(runOverlay && gameState.currentFloor===662){
+      // keep subtle but not fully gone until exit
+      runOverlay.style.opacity='0.18';
+    }
+  }, 16000);
+  applyDifficultyLighting();
 }
 
 function updateChase(dt){
   if(!gameState.chaseStarted || gameState.currentFloor!==662) return;
   // player move speed slightly higher if moving forward
   const playerZ = camera.position.z;
-  // monster chases
-  const speed = 4.2 + (playerZ - gameState.monsterPos)/30; // faster when far
-  gameState.monsterPos += speed * dt;
+  // monster chases - SLOWER for clarity, difficulty dependent
+  const baseSpeed = 2.2; // was 4.2, now slower for понятнее
+  const chaseMul = getChaseSpeedMul();
+  const speed = (baseSpeed + (playerZ - gameState.monsterPos)/45) * chaseMul;
+  // cap dt contribution when slow-mo effect active
+  const slowMo = 1; // could add slow-mo near end
+  gameState.monsterPos += speed * dt * slowMo;
   monsterGroup.position.z = gameState.monsterPos;
   // monster shake
   monsterGroup.position.x = Math.sin(performance.now()*0.02)*0.18;
@@ -928,13 +1030,31 @@ function updateChase(dt){
   }
 }
 
+function hideRunOverlay(){
+  if(runOverlay){ runOverlay.classList.add('hidden'); runOverlay.style.opacity='1'; runOverlay.style.transition=''; }
+}
 function triggerWardrobeFall(){
   gameState.wardrobeFallen=true;
   audio.playThud();
+  // big hint + slow fall
+  setQuest('ШКАФ ПАДАЕТ — ПУТЬ ПЕРЕКРЫТ! РАЗВОРАЧИВАЙСЯ (мышь назад) И БЕГИ НАЗАД!');
+  if(runOverlay){
+    runOverlay.classList.remove('hidden');
+    runOverlay.style.opacity='1';
+    document.getElementById('runBigText').textContent='НАЗАД!';
+    document.getElementById('runSubText').textContent='ШКАФ УПАЛ — РАЗВОРАЧИВАЙСЯ И БЕГИ ОБРАТНО';
+    document.getElementById('runHint').textContent='Поверни мышь на 180° и держи W — люстра спасёт';
+  }
   let prog=0; const startY=wardrobeBlock.position.y; const startZ=wardrobeBlock.position.z;
-  const fallInt=setInterval(()=>{ prog+=0.07; wardrobeBlock.rotation.x = -prog*1.6; wardrobeBlock.position.y = startY - prog*0.9; wardrobeBlock.position.z = startZ + prog*0.25; if(prog>=1){ clearInterval(fallInt); wardrobeBlock.position.y=0.55; setQuest('PATH BLOCKED! TURN AROUND!'); }
-  },16);
+  const fallInt=setInterval(()=>{ prog+=0.045; wardrobeBlock.rotation.x = -prog*1.6; wardrobeBlock.position.y = startY - prog*0.9; wardrobeBlock.position.z = startZ + prog*0.25; if(prog>=1){ clearInterval(fallInt); wardrobeBlock.position.y=0.55; setQuest('БЕГИ НАЗАД! Люстра упадёт на монстра когда он подойдёт к шкафу'); }
+  },22);
   // block colliders
+  setTimeout(()=>{
+    if(runOverlay && gameState.currentFloor===662){
+      document.getElementById('runBigText').textContent='БЕГИ';
+      document.getElementById('runSubText').textContent='БЕГИ НАЗАД — К НАЧАЛУ КОРИДОРА';
+    }
+  }, 2600);
 }
 
 function triggerChandelier(){
@@ -942,9 +1062,16 @@ function triggerChandelier(){
   gameState.chandelierDropped=true;
   chandelierMesh.userData.falling=true;
   audio.playThud(); audio.playScreech(1.0);
-  // shake
+  // show спасение text
+  setQuest('ЛЮСТРА ПАДАЕТ — МОНСТР РАЗДАВЛЕН! ТЫ СПАСЁН — ИДИ К ЛИФТУ');
+  if(runOverlay){
+    document.getElementById('runBigText').textContent='СПАСЁН!';
+    document.getElementById('runSubText').textContent='ЛЮСТРА УПАЛА — МОНСТР МЁРТВ — ЖДИ ПЕРЕХОД В ЛИФТ';
+    document.getElementById('runHint').textContent='';
+  }
+  // shake - чуть медленнее для понятности
   let prog=0; const startY=chandelierMesh.position.y;
-  const fall=setInterval(()=>{ prog+=0.085; chandelierMesh.position.y = startY - prog*5.2; chandelierMesh.rotation.z += 0.18; chandelierMesh.rotation.x +=0.12;
+  const fall=setInterval(()=>{ prog+=0.062; chandelierMesh.position.y = startY - prog*5.2; chandelierMesh.rotation.z += 0.14; chandelierMesh.rotation.x +=0.09;
     if(chandelierMesh.position.y <= 0.55){ clearInterval(fall); chandelierMesh.position.y=0.55;
       // crush effect
       monsterGroup.visible=false;
@@ -953,9 +1080,10 @@ function triggerChandelier(){
       camera.position.y+=0.12;
       // stop chase
       gameState.chaseStarted=false; gameState.monsterActive=false; chromatic.style.opacity='0';
-      setTimeout(()=>{ doFadeTransition(()=>{ buildElevatorToFloor3(); }); }, 900);
+      hideRunOverlay();
+      setTimeout(()=>{ doFadeTransition(()=>{ buildElevatorToFloor3(); }); }, 1400);
     }
-  },16);
+  },18);
 }
 
 function buildElevatorToFloor3(){
@@ -1027,6 +1155,7 @@ function buildFloor3(){
   camera.position.set(0,playerHeight,2); controls.getObject().position.copy(camera.position);
   if(isMobile) resetMobileView();
   updateInventoryUI();
+  applyDifficultyLighting();
 }
 
 function createBearMesh(isBloody=false){
@@ -1097,18 +1226,318 @@ function clickBearSink(){
   audio.playThud(); audio.playLaugh();
   sinkBearMesh.visible=false; interactables=interactables.filter(i=>i.mesh!==sinkBearMesh);
   gameState.hasToy=true; if(!gameState.inventory.includes('Teddy')) gameState.inventory.push('Teddy');
-  // key spawns in sink if not already hasKey - this is the key for final door
+  // key spawns in sink if not already hasKey - this is the key for next floors
   if(!gameState.hasKey){
     gameState.hasKey=true; if(!gameState.inventory.includes('Key')) gameState.inventory.push('Key');
-    setQuest('Found Teddy and a rusty Key in the blood! Go to Floor 4.');
+    setQuest('Found Teddy and a rusty Key in the blood! Go to next floors (5-14).');
   } else {
-    setQuest('Teddy acquired! Elevator now active. Go to Floor 4.');
+    setQuest('Teddy acquired! Elevator now active. Go to Floor 5.');
   }
   updateInventoryUI();
   bearStage=3;
   // turn elevator green
   elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.5;
   elevatorDoors.forEach(d=>{ d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.3; });
+}
+
+// ============ 10 EXTRA COMPLEX FLOORS (5-14) ============
+let extraMazeWalls=[];
+
+function buildExtraFloor(n){
+  clearScene(); hideCodeDisplay(); hideRunOverlay();
+  gameState.currentFloor=n;
+  const names={
+    5:'FLOOR 5 — LABYRINTH',
+    6:'FLOOR 6 — DARKNESS',
+    7:'FLOOR 7 — MIRRORS',
+    8:'FLOOR 8 — FLOODED',
+    9:'FLOOR 9 — CLOCK',
+    10:'FLOOR 10 — VOICES',
+    11:'FLOOR 11 — HOSPITAL',
+    12:'FLOOR 12 — DOLLS',
+    13:'FLOOR 13 — SHADOWS',
+    14:'FLOOR 14 — HELL ANTECHAMBER'
+  };
+  const quests={
+    5:'НАЙДИ 3 КЛЮЧА В ЛАБИРИНТЕ — СОБЕРИ ВСЕ!',
+    6:'ТЬМА — НАЙДИ СВЕТЯЩИЙСЯ ШАР В ТЕМНОТЕ',
+    7:'ЗЕРКАЛА ОБМАНЫВАЮТ — НАЙДИ НАСТОЯЩУЮ КНОПКУ',
+    8:'ЗАТОПЛЕННЫЙ ЭТАЖ — НАЙДИ ВЕНТИЛЬ',
+    9:'ВРЕМЯ ТИКАЕТ — НАЙДИ КОД ЗА 60 СЕК',
+    10:'ГОЛОСА ШЕПЧУТ — СЛЕДУЙ ЗА ПРАВИЛЬНЫМ ГОЛОСОМ',
+    11:'БОЛЬНИЦА — ОТКРОЙ ПРАВИЛЬНУЮ ДВЕРЬ ИЗ 6',
+    12:'ФАБРИКА КУКОЛ — НАЙДИ НАСТОЯЩЕГО ТЭДДИ СРЕДИ 6',
+    13:'ТЕНИ — ВКЛЮЧИ СВЕТ И НЕ ДАЙ ТЕНЯМ ПОЙМАТЬ',
+    14:'ПРЕДВЕРИЕ АДА — МАКСИМАЛЬНАЯ СЛОЖНОСТЬ — СОБЕРИ 4 КЛЮЧА'
+  };
+  floorIndicator.textContent= names[n] || `FLOOR ${n}`;
+  setQuest(quests[n] || 'FIND THE EXIT');
+  const tex=createWallTexture([`FLOOR ${n}`, 'NO WAY OUT', 'FIND IT', '']);
+  // different sizes per floor complexity
+  const sizes={5:[16,3.4,16],6:[10,3.2,10],7:[12,3.3,12],8:[14,3.2,14],9:[10,3.4,10],10:[12,3.3,12],11:[18,3.5,12],12:[11,3.3,11],13:[10,3.2,10],14:[16,3.6,16]};
+  const [w,h,d]=sizes[n]||[12,3.3,12];
+  addWallsRoom(w,h,d, tex);
+  scene.fog = new THREE.Fog(0x060202, 7, 22);
+  if(n===6) scene.fog = new THREE.Fog(0x020202, 4, 12);
+  if(n===14) scene.fog = new THREE.Fog(0x0a0000, 6, 16);
+
+  // elevator - will be unlocked after puzzle
+  elevatorGroup=new THREE.Group(); 
+  // position elevator differently per floor for variety
+  const ePos = n%2===0 ? [w/2-1.2,0,-d/2+1.5] : [-w/2+1.2,0,d/2-1.5];
+  elevatorGroup.position.set(...ePos);
+  elevatorGroup.rotation.y = Math.PI;
+  const eBox=new THREE.Mesh(new THREE.BoxGeometry(1.7,2.35,1.35), new THREE.MeshStandardMaterial({color:0x222222, metalness:0.55, roughness:0.4})); eBox.position.y=1.175; eBox.castShadow=true; elevatorGroup.add(eBox);
+  const lD=new THREE.Mesh(new THREE.BoxGeometry(0.82,2.1,0.08), new THREE.MeshStandardMaterial({color:0x444444, metalness:0.65})); lD.position.set(-0.41,1.15,0.70); lD.castShadow=true; elevatorGroup.add(lD);
+  const rD=new THREE.Mesh(new THREE.BoxGeometry(0.82,2.1,0.08), new THREE.MeshStandardMaterial({color:0x444444, metalness:0.65})); rD.position.set(0.41,1.15,0.70); rD.castShadow=true; elevatorGroup.add(rD);
+  elevatorDoors=[lD,rD]; 
+  const eLight=new THREE.PointLight(0xff3333,2.2,3.2); eLight.position.set(0,2.3,0.4); elevatorGroup.add(eLight); elevatorGroup.userData.light=eLight;
+  const eTrim=new THREE.Mesh(new THREE.BoxGeometry(1.8,0.08,0.08), new THREE.MeshStandardMaterial({color:0x0a0a0a})); eTrim.position.set(0,2.33,0.72); elevatorGroup.add(eTrim);
+  scene.add(elevatorGroup);
+  interactables.push({mesh:eBox, type:'elevatorExtra', data:{floor:n}, prompt: n===5?'Need 3 keys for elevator': n===14?'Need 4 keys':'Find key to activate elevator'});
+
+  // build puzzle per floor
+  extraMazeWalls=[];
+  gameState.collectedKeys = new Set(); // per floor
+  if(n===5) buildMazePuzzle();
+  else if(n===6) buildDarknessPuzzle();
+  else if(n===7) buildMirrorsPuzzle();
+  else if(n===8) buildFloodedPuzzle();
+  else if(n===9) buildClockPuzzle();
+  else if(n===10) buildVoicesPuzzle();
+  else if(n===11) buildHospitalPuzzle();
+  else if(n===12) buildDollsPuzzle();
+  else if(n===13) buildShadowsPuzzle();
+  else if(n===14) buildHellPuzzle();
+
+  camera.position.set(0,playerHeight, w/2-1); controls.getObject().position.copy(camera.position);
+  if(isMobile) resetMobileView();
+  applyDifficultyLighting();
+  // after difficulty, re-darken floor 6 if not easy but ensure darkness
+  if(n===6 && gameDifficulty!=='easy'){
+    ambient.intensity=0.12; extraRoomLight.intensity=0;
+    flashlight.intensity=22; flashlight.distance=10; flashlight.angle=Math.PI/7;
+  }
+  // flood visual for floor 8
+  if(n===8){
+    const water=new THREE.Mesh(new THREE.PlaneGeometry(w-0.4, d-0.4), new THREE.MeshStandardMaterial({color:0x1a0a0a, emissive:0x330000, transparent:true, opacity:0.65, roughness:0.1}));
+    water.rotation.x=-Math.PI/2; water.position.set(0,0.06,0); scene.add(water);
+  }
+}
+
+function spawnExtraKey(pos, idx, onCollect){
+  const g=new THREE.Group(); g.position.copy(pos);
+  const stem=new THREE.Mesh(new THREE.CylinderGeometry(0.02,0.02,0.32,8), new THREE.MeshStandardMaterial({color:0xffd700, metalness:0.85}));
+  stem.rotation.z=Math.PI/2; g.add(stem);
+  const head=new THREE.Mesh(new THREE.TorusGeometry(0.07,0.018,8,14), new THREE.MeshStandardMaterial({color:0xffd700, metalness:0.9})); head.position.x=-0.16; g.add(head);
+  const teeth=new THREE.Mesh(new THREE.BoxGeometry(0.08,0.05,0.02), new THREE.MeshStandardMaterial({color:0xffd700})); teeth.position.set(0.15,0.02,0); g.add(teeth);
+  g.userData={type:'extraKey', idx};
+  scene.add(g);
+  const glow=new THREE.PointLight(0xffd700,1.0,2.2); glow.position.copy(pos); scene.add(glow); g.userData.glow=glow;
+  interactables.push({mesh:g, type:'extraKey', group:g, prompt:`Take key ${idx}`, onCollect});
+  // floating bob
+  g.userData.baseY=pos.y;
+  g.userData.time=Math.random()*Math.PI*2;
+  // animate via interval in updateEffects
+  if(!window._extraKeys) window._extraKeys=[];
+  window._extraKeys.push(g);
+}
+
+function buildMazePuzzle(){
+  // 16x16 labyrinth with 3 keys
+  const walls=[];
+  const wallMat=new THREE.MeshStandardMaterial({color:0x2e1a0a, roughness:0.85});
+  const segments=[
+    {p:[ -2,0.9, -3], s:[0.22,1.8,6]},
+    {p:[ 2,0.9, 3], s:[0.22,1.8,6]},
+    {p:[0,0.9,0], s:[6,1.8,0.22]},
+    {p:[-5,0.9,2], s:[4,1.8,0.22]},
+    {p:[5,0.9,-2], s:[4,1.8,0.22]},
+    {p:[0,0.9,-5.5], s:[8,1.8,0.22]},
+  ];
+  segments.forEach(seg=>{
+    const m=new THREE.Mesh(new THREE.BoxGeometry(...seg.s), wallMat);
+    m.position.set(...seg.p); m.castShadow=true; m.receiveShadow=true; scene.add(m); walls.push(m);
+    interactables.push({mesh:m, type:'mazeWall', prompt:''}); // for ray but not interact
+    colliders.push(m);
+    extraMazeWalls.push(m);
+  });
+  spawnExtraKey(new THREE.Vector3(-6,0.6,-6),1, onMazeKey);
+  spawnExtraKey(new THREE.Vector3(6,0.6,6),2, onMazeKey);
+  spawnExtraKey(new THREE.Vector3(-6,0.6,5.5),3, onMazeKey);
+}
+function onMazeKey(g){
+  const idx=g.userData.idx;
+  gameState.collectedKeys.add(idx);
+  scene.remove(g.userData.glow);
+  scene.remove(g);
+  interactables=interactables.filter(i=>i.group!==g);
+  window._extraKeys=window._extraKeys.filter(k=>k!==g);
+  audio.playThud();
+  const left=3-gameState.collectedKeys.size;
+  if(left>0) setQuest(`Ключ ${idx}/3 взят! Осталось ${left}`);
+  else {
+    setQuest('Все 3 ключа собраны! Лифт открыт — беги к нему!');
+    elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.5;
+    elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.3;});
+    audio.playWin();
+  }
+}
+function buildDarknessPuzzle(){
+  // only one glowing orb in dark
+  const orb=new THREE.Group(); orb.position.set( (Math.random()-0.5)*6, 0.7, (Math.random()-0.5)*6);
+  const sphere=new THREE.Mesh(new THREE.SphereGeometry(0.26,16,16), new THREE.MeshStandardMaterial({color:0xffee88, emissive:0xffdd55, emissiveIntensity:1.2}));
+  sphere.castShadow=true; orb.add(sphere);
+  const light=new THREE.PointLight(0xffee88,2.8,8); light.position.copy(orb.position); scene.add(light); orb.userData.light=light;
+  orb.userData={type:'darkOrb'};
+  scene.add(orb);
+  interactables.push({mesh:sphere, type:'darkOrb', group:orb, prompt:'Take glowing orb'});
+}
+function buildMirrorsPuzzle(){
+  // 3 fake buttons, 1 real
+  const positions=[[ -4,0.9,-4],[4,0.9,-4],[-4,0.9,4],[4,0.9,4]];
+  positions.forEach((p,i)=>{
+    const isReal = i===2; // fixed for determinism
+    const btn=new THREE.Mesh(new THREE.CylinderGeometry(0.12,0.12,0.08,14), new THREE.MeshStandardMaterial({color:isReal?0x00ff00:0x550000, emissive:isReal?0x00ff66:0x330000, emissiveIntensity:0.9}));
+    btn.position.set(p[0],0.85,p[2]); btn.rotation.x=Math.PI/2; scene.add(btn);
+    // pedestal
+    const ped=new THREE.Mesh(new THREE.BoxGeometry(0.35,0.85,0.35), new THREE.MeshStandardMaterial({color:0x222222})); ped.position.set(p[0],0.425,p[2]); scene.add(ped);
+    interactables.push({mesh:btn, type: isReal?'mirrorReal':'mirrorFake', group:btn, prompt: isReal?'Press REAL button':'Press button (?)'});
+    if(isReal) btn.userData.real=true;
+  });
+  // mirrors visual (planes)
+  for(let i=0;i<2;i++){
+    const mir=new THREE.Mesh(new THREE.PlaneGeometry(6,3), new THREE.MeshStandardMaterial({color:0xaaaaaa, metalness:0.9, roughness:0.08, transparent:true, opacity:0.35}));
+    mir.position.set(i===0? -5.9:5.9,1.6,0); mir.rotation.y= i===0? Math.PI/2: -Math.PI/2; scene.add(mir);
+  }
+}
+function buildFloodedPuzzle(){
+  const valve=new THREE.Group(); valve.position.set(0,0.85, -5);
+  const wheel=new THREE.Mesh(new THREE.TorusGeometry(0.24,0.03,8,16), new THREE.MeshStandardMaterial({color:0xaa2222, metalness:0.6})); wheel.rotation.x=Math.PI/2; valve.add(wheel);
+  for(let i=0;i<4;i++){ const sp=new THREE.Mesh(new THREE.BoxGeometry(0.04,0.38,0.02), new THREE.MeshStandardMaterial({color:0xcc3333})); sp.rotation.z=i*Math.PI/2; valve.add(sp); }
+  const base=new THREE.Mesh(new THREE.CylinderGeometry(0.08,0.08,0.5,10), new THREE.MeshStandardMaterial({color:0x333333, metalness:0.75})); base.position.y=-0.32; valve.add(base);
+  scene.add(valve);
+  interactables.push({mesh:wheel, type:'valve', group:valve, prompt:'Turn valve'});
+  // slowed movement hint: we will apply speed penalty in updateMovement for floor 8
+}
+function buildClockPuzzle(){
+  gameState.clockTime=60; gameState.clockInterval=null;
+  const code = Math.floor(1000+Math.random()*8999).toString();
+  gameState.extraCode=code;
+  console.log('Clock code',code);
+  // show code on wall via texture? simple plane with canvas
+  const c=document.createElement('canvas'); c.width=256; c.height=128; const ctx=c.getContext('2d'); ctx.fillStyle='#220000'; ctx.fillRect(0,0,256,128); ctx.fillStyle='#ff0000'; ctx.font='bold 42px monospace'; ctx.fillText(code, 40, 78);
+  const tex=new THREE.CanvasTexture(c); const plane=new THREE.Mesh(new THREE.PlaneGeometry(1.2,0.6), new THREE.MeshStandardMaterial({map:tex, emissive:0x330000})); plane.position.set(0,1.8,-5.8); scene.add(plane);
+  // input box (interact)
+  const box=new THREE.Mesh(new THREE.BoxGeometry(0.55,0.45,0.25), new THREE.MeshStandardMaterial({color:0x111111, metalness:0.7})); box.position.set(0,0.65,-4.2); scene.add(box);
+  interactables.push({mesh:box, type:'clockBox', prompt:`Enter code ${code} (click)`});
+  const timerLight=new THREE.PointLight(0xff0000,2,6); timerLight.position.set(0,2.5,0); scene.add(timerLight); scene.userData.timerLight=timerLight;
+  // countdown
+  gameState.clockInterval=setInterval(()=>{
+    if(gameState.currentFloor!==9){ clearInterval(gameState.clockInterval); return; }
+    gameState.clockTime--; setQuest(`ВРЕМЯ: ${gameState.clockTime}s — КОД ${code}`);
+    if(gameState.clockTime<=0){
+      clearInterval(gameState.clockInterval);
+      setQuest('ВРЕМЯ ВЫШЛО! Jumpscare!');
+      doJumpscare();
+      setTimeout(()=>{ document.getElementById('jumpscare').classList.add('hidden'); buildExtraFloor(9); }, 1800);
+    }
+    if(gameState.clockTime<15) audio.playWhisper();
+  },1000);
+}
+function buildVoicesPuzzle(){
+  const dolls=[];
+  for(let i=0;i<4;i++){
+    const g=createBearMesh(i===1); g.position.set(-4 + i*2.6, 0.62, -3); g.scale.set(0.85,0.85,0.85); scene.add(g);
+    const isCorrect = i===1;
+    g.userData.isCorrect=isCorrect;
+    interactables.push({mesh:g, type: isCorrect?'voiceCorrect':'voiceFake', group:g, prompt: isCorrect?'Listen… (correct)':'Pick doll'});
+    dolls.push(g);
+  }
+  // periodic whisper from correct
+  const whInt=setInterval(()=>{
+    if(gameState.currentFloor!==10) {clearInterval(whInt); return;}
+    if(Math.random()<0.6) audio.playWhisper();
+    // flash correct slightly
+    dolls[1].children.forEach(c=>{ if(c.material && c.material.emissive) c.material.emissiveIntensity=0.6+Math.random()*0.6; });
+  }, 2100);
+  scene.userData.voiceInt=whInt;
+}
+function buildHospitalPuzzle(){
+  for(let i=0;i<6;i++){
+    const door=new THREE.Mesh(new THREE.BoxGeometry(0.12,2.0,0.92), new THREE.MeshStandardMaterial({color:0x2e1a0a, roughness:0.85}));
+    const x = -7.5 + i*3; door.position.set(x,1.0, -5.2); door.castShadow=true; scene.add(door);
+    const isCorrect = i===4;
+    interactables.push({mesh:door, type: isCorrect?'hospCorrect':'hospFake', group:door, prompt: isCorrect?'Open door (correct?)':'Open door'});
+    const frame=new THREE.Mesh(new THREE.BoxGeometry(0.14,2.1,1.02), new THREE.MeshStandardMaterial({color:0x111111})); frame.position.set(x,1.0,-5.2); scene.add(frame);
+  }
+}
+function buildDollsPuzzle(){
+  for(let i=0;i<6;i++){
+    const isCorrect = i===3;
+    const g=createBearMesh(isCorrect); g.position.set(-5 + i*2, 0.62, (i%2===0?-2.5:2.0)); g.scale.set(0.8,0.8,0.8); scene.add(g);
+    interactables.push({mesh:g, type: isCorrect?'dollCorrect':'dollFake', group:g, prompt: isCorrect?'Take Teddy (real?)':'Inspect doll'});
+  }
+}
+function buildShadowsPuzzle(){
+  // light switch on wall
+  const sw=new THREE.Mesh(new THREE.BoxGeometry(0.18,0.28,0.04), new THREE.MeshStandardMaterial({color:0xcccccc, metalness:0.5})); sw.position.set(5.3,1.3,0); sw.rotation.y=-Math.PI/2; scene.add(sw);
+  interactables.push({mesh:sw, type:'shadowSwitch', prompt:'Flip light switch'});
+  scene.userData.shadowSwitchOn=false;
+  // shadow silhouettes (planes that move)
+  for(let i=0;i<3;i++){
+    const sh=new THREE.Mesh(new THREE.PlaneGeometry(0.7,1.8), new THREE.MeshStandardMaterial({color:0x000000, transparent:true, opacity:0.85, side:THREE.DoubleSide}));
+    sh.position.set((Math.random()-0.5)*6,0.9,(Math.random()-0.5)*6); sh.rotation.y=Math.random()*Math.PI; scene.add(sh);
+    if(!scene.userData.shadows) scene.userData.shadows=[];
+    scene.userData.shadows.push(sh);
+  }
+  ambient.intensity=0.15;
+}
+function buildHellPuzzle(){
+  // 4 keys in corners, plus moving shadows + maze
+  const wallMat=new THREE.MeshStandardMaterial({color:0x1a0a05, roughness:0.9});
+  const w1=new THREE.Mesh(new THREE.BoxGeometry(0.22,1.8,8), wallMat); w1.position.set(0,0.9,0); scene.add(w1); extraMazeWalls.push(w1); colliders.push(w1);
+  const w2=new THREE.Mesh(new THREE.BoxGeometry(8,1.8,0.22), wallMat); w2.position.set(0,0.9,4); scene.add(w2); extraMazeWalls.push(w2); colliders.push(w2);
+  const positions=[[-6,0.6,-6],[6,0.6,-6],[-6,0.6,6],[6,0.6,6]];
+  positions.forEach((p,i)=> spawnExtraKey(new THREE.Vector3(...p), i+1, onHellKey));
+}
+function onHellKey(g){
+  gameState.collectedKeys.add(g.userData.idx);
+  scene.remove(g.userData.glow); scene.remove(g); interactables=interactables.filter(i=>i.group!==g); window._extraKeys=window._extraKeys.filter(k=>k!==g);
+  audio.playThud();
+  const left=4-gameState.collectedKeys.size;
+  if(left>0) setQuest(`Ключ ада ${g.userData.idx}/4 — осталось ${left}`);
+  else {
+    setQuest('ВСЕ 4 КЛЮЧА АДА СОБРАНЫ! ЛИФТ ОТКРЫТ — ФИНАЛ БЛИЗКО!');
+    elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=4;
+    elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.4;});
+    audio.playWin();
+  }
+}
+function handleExtraElevator(){
+  const n=gameState.currentFloor;
+  const need = n===5?3 : n===14?4 : 1;
+  // check if enough keys/orbs/buttons done
+  if(n===5 && gameState.collectedKeys.size<3){ setQuest(`Нужно 3 ключа! Собрано ${gameState.collectedKeys.size}/3`); audio.playDoorSlam(); return; }
+  if(n===14 && gameState.collectedKeys.size<4){ setQuest(`Нужно 4 ключа! ${gameState.collectedKeys.size}/4`); audio.playDoorSlam(); return; }
+  if([6,7,8,10,11,12,13].includes(n)){
+    // check elevator green? we set green only when puzzle solved; if still red block
+    if(elevatorGroup.userData.light.color.getHex()!==0x00ff00){ setQuest('Сначала реши головоломку этажа!'); audio.playDoorSlam(); return; }
+  }
+  if(n===9 && elevatorGroup.userData.light.color.getHex()!==0x00ff00){ setQuest('Введи код!'); audio.playDoorSlam(); return; }
+  // success - go next
+  gameState.inTransition=true;
+  let p=0; const int=setInterval(()=>{ p+=0.07; elevatorDoors[0].position.x=-0.41 -p*0.9; elevatorDoors[1].position.x=0.41 +p*0.9; if(p>=1){clearInterval(int); doFadeTransition(()=>{
+    if(window._extraKeys) window._extraKeys.forEach(k=>{ if(k.userData.glow) scene.remove(k.userData.glow); });
+    window._extraKeys=[];
+    if(gameState.clockInterval) clearInterval(gameState.clockInterval);
+    if(scene.userData.voiceInt) clearInterval(scene.userData.voiceInt);
+    scene.userData.shadows=null; scene.userData.timerLight=null;
+    if(n < 14) buildExtraFloor(n+1);
+    else buildFloor4(); // after 14 go to final door
+    gameState.inTransition=false;
+  }); }},30);
+  audio.playElevatorScreech();
 }
 
 // Floor 4 - Final Door
@@ -1148,6 +1577,7 @@ function buildFloor4(){
   if(isMobile) resetMobileView();
   // subtle whisper
   setTimeout(()=> audio.playWhisper(), 1200);
+  applyDifficultyLighting();
 }
 
 function handleFinalDoor(){
@@ -1240,12 +1670,144 @@ function handleInteract(){
     case 'bearSink': clickBearSink(); break;
     case 'elevatorF3': {
       if(bearStage<3 && !gameState.hasToy){ setQuest('Find the Teddy first! Check bed and sink.'); audio.playDoorSlam(); }
-      else { gameState.inTransition=true; // doors open
-        let p=0; const int=setInterval(()=>{ p+=0.07; elevatorDoors[0].position.x=-0.39 -p*0.9; elevatorDoors[1].position.x=0.39 +p*0.9; if(p>=1){clearInterval(int); doFadeTransition(()=>buildFloor4()); gameState.inTransition=false; }},30); audio.playElevatorScreech();
+      else { gameState.inTransition=true; // doors open -> to floor 5
+        let p=0; const int=setInterval(()=>{ p+=0.07; elevatorDoors[0].position.x=-0.39 -p*0.9; elevatorDoors[1].position.x=0.39 +p*0.9; if(p>=1){clearInterval(int); doFadeTransition(()=>buildExtraFloor(5)); gameState.inTransition=false; }},30); audio.playElevatorScreech();
       }
       break;
     }
     case 'finalDoor': handleFinalDoor(); break;
+    case 'extraKey': {
+      if(entry.onCollect) entry.onCollect(entry.group);
+      else { // fallback generic
+        gameState.collectedKeys.add(entry.group.userData.idx);
+        scene.remove(entry.group.userData.glow); scene.remove(entry.group);
+        interactables=interactables.filter(i=>i.group!==entry.group);
+        window._extraKeys=window._extraKeys.filter(k=>k!==entry.group);
+        audio.playThud(); setQuest(`Ключ взят!`);
+        // check if need to auto open elevator for single key floors
+        if(gameState.currentFloor!==5 && gameState.currentFloor!==14){
+          elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+          elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+          setQuest('Ключ взят! Лифт открыт!');
+          audio.playWin();
+        }
+      }
+      break;
+    }
+    case 'elevatorExtra': handleExtraElevator(); break;
+    case 'darkOrb': {
+      // collect orb for floor 6
+      scene.remove(entry.group.userData.light); scene.remove(entry.group);
+      interactables=interactables.filter(i=>i.group!==entry.group);
+      audio.playThud(); setQuest('Светящийся шар взят! Лифт открыт!');
+      elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+      elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      break;
+    }
+    case 'mirrorReal': {
+      audio.playThud(); setQuest('Нашла настоящую кнопку! Лифт открыт!');
+      elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+      elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      interactables=interactables.filter(i=>i.mesh!==entry.mesh);
+      scene.remove(entry.mesh);
+      break;
+    }
+    case 'mirrorFake': {
+      audio.playScreech(0.6); redFlash.style.opacity='0.45'; setTimeout(()=> redFlash.style.opacity='0',180);
+      setQuest('Фальшивка! Ищи другую кнопку!');
+      break;
+    }
+    case 'valve': {
+      audio.playThud(); setQuest('Вентиль повёрнут! Вода уходит — лифт открыт!');
+      elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+      elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      // remove water visual
+      scene.traverse(o=>{ if(o.isMesh && o.material && o.material.transparent && o.material.opacity===0.65) o.visible=false; });
+      interactables=interactables.filter(i=>i.type!=='valve');
+      break;
+    }
+    case 'clockBox': {
+      isSafeOpen=true;
+      if(isMobile) isPointerLocked=false; else controls.unlock();
+      const code=gameState.extraCode;
+      const ans=prompt(`Введи код с экрана: ${code} (подсказка на стене)`);
+      isSafeOpen=false;
+      if(isMobile){ isPointerLocked=true; syncMobileYawPitch(); } else controls.lock();
+      if(ans===code){
+        clearInterval(gameState.clockInterval);
+        audio.playWin(); setQuest('Код верный! Лифт открыт!');
+        elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.5;
+        elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.3;});
+      } else {
+        audio.playScreech(0.5); setQuest('Неверный код! Попробуй снова. Код на стене: '+code);
+      }
+      break;
+    }
+    case 'voiceCorrect': {
+      audio.playLaugh(); setQuest('Правильный голос! Лифт открыт!');
+      elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+      elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      break;
+    }
+    case 'voiceFake': {
+      audio.playScreech(0.5); redFlash.style.opacity='0.35'; setTimeout(()=> redFlash.style.opacity='0',150);
+      setQuest('Не тот шёпот… Слушай внимательнее!');
+      break;
+    }
+    case 'hospCorrect': {
+      audio.playThud(); setQuest('Правильная дверь! За ней ключ — возьми его!');
+      // spawn key behind door
+      const kp=new THREE.Vector3(entry.group.position.x,0.6,-3.8);
+      spawnExtraKey(kp,1, (g)=>{
+        scene.remove(g.userData.glow); scene.remove(g); interactables=interactables.filter(i=>i.group!==g); window._extraKeys=window._extraKeys.filter(k=>k!==g);
+        audio.playThud(); setQuest('Ключ найден! Лифт открыт!');
+        elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+        elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      });
+      entry.group.position.z +=0.6; entry.group.rotation.y+=0.35;
+      interactables=interactables.filter(i=>i.group!==entry.group);
+      break;
+    }
+    case 'hospFake': {
+      audio.playDoorSlam(); setQuest('Пустая палата… Попробуй другую дверь');
+      entry.group.position.z +=0.35; entry.group.rotation.y+=0.2;
+      interactables=interactables.filter(i=>i.group!==entry.group);
+      break;
+    }
+    case 'dollCorrect': {
+      audio.playThud(); setQuest('Настоящий Тэдди! Лифт открыт!');
+      elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+      elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+      scene.remove(entry.group);
+      interactables=interactables.filter(i=>i.group!==entry.group);
+      break;
+    }
+    case 'dollFake': {
+      audio.playScreech(0.4); redFlash.style.opacity='0.3'; setTimeout(()=> redFlash.style.opacity='0',120);
+      setQuest('Кукла фальшивка! Ищи дальше!');
+      // slight move
+      entry.group.rotation.y+=0.5;
+      break;
+    }
+    case 'shadowSwitch': {
+      scene.userData.shadowSwitchOn = !scene.userData.shadowSwitchOn;
+      if(scene.userData.shadowSwitchOn){
+        ambient.intensity=1.8; extraRoomLight.intensity=2.5;
+        flashlight.intensity=0; flashlight.visible=false;
+        // kill shadows
+        if(scene.userData.shadows) scene.userData.shadows.forEach(s=> s.visible=false);
+        setQuest('Свет включён! Тени исчезли — лифт открыт!');
+        elevatorGroup.userData.light.color.set(0x00ff00); elevatorGroup.userData.light.intensity=3.2;
+        elevatorDoors.forEach(d=>{d.material.emissive=new THREE.Color(0x00ff00); d.material.emissiveIntensity=0.28;});
+        audio.playThud();
+      } else {
+        ambient.intensity=0.15; extraRoomLight.intensity=0; flashlight.visible=true; flashlight.intensity=22;
+        if(scene.userData.shadows) scene.userData.shadows.forEach(s=> s.visible=true);
+        setQuest('Свет выключен — тени вернулись!');
+        audio.playFlickerSound();
+      }
+      break;
+    }
   }
 }
 
@@ -1267,7 +1829,11 @@ function updateHover(){
 // Movement with simple collision (bounds)
 function updateMovement(dt){
   if((!isPointerLocked && !isMobile) || gameState.inTransition || isSafeOpen) return;
-  const speed=  gameState.currentFloor===662? 4.6 : 2.9;
+  let baseSpeed = gameState.currentFloor===662? 3.4 : 2.9; // slower on 662 for понятнее
+  const diffMul = getDifficultySpeedMul();
+  // on easy player faster, on hard slower
+  baseSpeed *= diffMul;
+  const speed = baseSpeed;
   const ctrlObj = controls.getObject();
   const forward = new THREE.Vector3(); ctrlObj.getWorldDirection(forward); forward.y=0; forward.normalize();
   if(forward.lengthSq() < 0.001){
@@ -1307,20 +1873,47 @@ function updateMovement(dt){
   if(gameState.currentFloor===1){
     newPos.x = Math.max(-4.6, Math.min(4.6, newPos.x));
     newPos.z = Math.max(-3.6, Math.min(3.6, newPos.z));
-    // block elevator interior until opened? allow
   } else if(gameState.currentFloor===2){
     newPos.x = Math.max(-6.6, Math.min(6.6, newPos.x));
     newPos.z = Math.max(-6.6, Math.min(6.6, newPos.z));
   } else if(gameState.currentFloor===662){
     newPos.x = Math.max(-1.35, Math.min(1.35, newPos.x));
     newPos.z = Math.max(-7, Math.min(60, newPos.z));
-    if(gameState.wardrobeFallen && newPos.z > 41.2 && Math.abs(newPos.x) < 1.2) newPos.z = 41.2; // block
+    if(gameState.wardrobeFallen && newPos.z > 41.2 && Math.abs(newPos.x) < 1.2) newPos.z = 41.2;
   } else if(gameState.currentFloor===3){
     newPos.x = Math.max(-5.6, Math.min(5.6, newPos.x));
     newPos.z = Math.max(-4.6, Math.min(4.6, newPos.z));
   } else if(gameState.currentFloor===4){
     newPos.x = Math.max(-3.6, Math.min(3.6, newPos.x));
     newPos.z = Math.max(-3.6, Math.min(3.6, newPos.z));
+  } else if([5,6,7,8,9,10,12,13,14].includes(gameState.currentFloor)){
+    const w = gameState.currentFloor===5?7.5 : gameState.currentFloor===14?7.5 : gameState.currentFloor===11?8.5 : 5.2;
+    const d = gameState.currentFloor===5?7.5 : gameState.currentFloor===14?7.5 : gameState.currentFloor===11?5.5 : 5.2;
+    newPos.x = Math.max(-w, Math.min(w, newPos.x));
+    newPos.z = Math.max(-d, Math.min(d, newPos.z));
+    // maze collision simple - slow down near walls
+    if(extraMazeWalls.length>0){
+      for(let wall of extraMazeWalls){
+        const wp=wall.position.clone(); const ws=new THREE.Vector3(wall.geometry.parameters.width||0.22, wall.geometry.parameters.height||1.8, wall.geometry.parameters.depth||0.22);
+        // simple block if within wall bounding box shrink
+        const hx=ws.x/2+0.22, hz=ws.z/2+0.22;
+        if(Math.abs(newPos.x - wp.x) < hx && Math.abs(newPos.z - wp.z) < hz){
+          // push back slightly
+          const dx=newPos.x - wp.x, dz=newPos.z - wp.z;
+          if(Math.abs(dx) > Math.abs(dz)) newPos.x = wp.x + Math.sign(dx)*(hx+0.02);
+          else newPos.z = wp.z + Math.sign(dz)*(hz+0.02);
+        }
+      }
+    }
+  } else if(gameState.currentFloor===11){
+    newPos.x = Math.max(-8.5, Math.min(8.5, newPos.x));
+    newPos.z = Math.max(-5.5, Math.min(5.5, newPos.z));
+  }
+  // flooded floor 8 slows movement by 0.68 multiplier via delta scaling already done? apply extra slow via position lerp
+  if(gameState.currentFloor===8 && hasInput){
+    // water resistance: reduce effective movement already by scaling delta earlier? we apply dampening here by moving back 30%
+    const damped = camera.position.clone().lerp(newPos, 0.72);
+    newPos.copy(damped);
   }
   camera.position.copy(newPos); ctrlObj.position.copy(newPos);
 }
@@ -1339,11 +1932,14 @@ function updateEffects(dt, elapsed){
   const dir=new THREE.Vector3(); camera.getWorldDirection(dir);
   flashlight.position.copy(camera.position);
   flashTarget.position.copy(camera.position.clone().addScaledVector(dir, 6));
-  // random flicker battery
+  // random flicker battery - less on easy, more on hard
   if(gameState.flashlightOn && gameState.currentFloor!==662){
     flickerTimer -= dt;
     if(flickerTimer<=0){
-      if(Math.random()<0.025){
+      let flickerChance = 0.025;
+      if(gameDifficulty==='easy') flickerChance=0.006;
+      if(gameDifficulty==='hard') flickerChance=0.055;
+      if(Math.random()<flickerChance){
         const old=flashlight.intensity;
         flashlight.intensity = Math.random()>0.5? 4: 28;
         setTimeout(()=>{ if(gameState.flashlightOn) flashlight.intensity= old; }, 70+Math.random()*90);
@@ -1354,8 +1950,36 @@ function updateEffects(dt, elapsed){
   }
   // ensure flashlight off during blackout
   if(!gameState.flashlightOn) flashlight.intensity=0;
-  // vignette pulse
-  vignette.style.opacity = (0.82 + Math.sin(elapsed*0.0012)*0.08).toString();
+  if(gameDifficulty==='easy' && gameState.currentFloor!==662){
+    flashlight.visible=false; flashlight.intensity=0;
+  } else if(gameDifficulty!=='easy' && flashlight.visible===false && gameState.currentFloor!==662 && gameState.currentFloor!==6){
+    // ensure visible again if switched to normal/hard
+    flashlight.visible=gameState.flashlightOn;
+  }
+  // vignette pulse - softer on easy
+  if(gameDifficulty!=='easy') vignette.style.opacity = (0.82 + Math.sin(elapsed*0.0012)*0.08).toString();
+  else vignette.style.opacity='0.35';
+  // floating keys bob
+  if(window._extraKeys){
+    window._extraKeys.forEach(k=>{
+      k.userData.time += dt*1.8;
+      k.position.y = k.userData.baseY + Math.sin(k.userData.time)*0.12;
+      k.rotation.y += dt*0.9;
+    });
+  }
+  // shadows movement for floor 13
+  if(gameState.currentFloor===13 && scene.userData.shadows && !scene.userData.shadowSwitchOn){
+    scene.userData.shadows.forEach((s,i)=>{
+      s.position.x += Math.sin(elapsed*0.0007 + i)*0.008;
+      s.position.z += Math.cos(elapsed*0.0005 + i*1.3)*0.008;
+      s.lookAt(camera.position);
+      // if close to player, slight damage / flicker
+      if(s.position.distanceTo(camera.position) < 1.6 && Math.random()<0.02){
+        redFlash.style.opacity='0.18'; setTimeout(()=> redFlash.style.opacity='0',90);
+        audio.playWhisper();
+      }
+    });
+  }
   // update floor3 proximity
   updateFloor3Proximity();
   if(gameState.currentFloor===662) updateChase(dt);
@@ -1478,7 +2102,7 @@ function resetMobileView(){
 }
 
 function applyMobileLook(deltaX, deltaY){
-  const sensitivity = 0.0042;
+  const sensitivity = 0.0042 * mouseSensitivity;
   yaw -= deltaX * sensitivity;
   pitch -= deltaY * sensitivity;
   const maxPitch = Math.PI/2 - 0.08;
@@ -1695,6 +2319,18 @@ document.getElementById('btnCloseOptions').addEventListener('click', ()=> docume
 document.getElementById('btnCloseCredits').addEventListener('click', ()=> document.getElementById('creditsPanel').classList.add('hidden'));
 document.getElementById('brightness').addEventListener('input', e=>{ renderer.toneMappingExposure = parseFloat(e.target.value); });
 document.getElementById('volume').addEventListener('input', e=>{ audio.setVolume(parseFloat(e.target.value)); });
+const sensEl=document.getElementById('mouseSens');
+const diffEl=document.getElementById('difficulty');
+if(sensEl){
+  sensEl.value=mouseSensitivity.toString();
+  document.getElementById('sensValue').textContent=mouseSensitivity.toFixed(1);
+  sensEl.addEventListener('input', e=> setMouseSensitivity(e.target.value));
+}
+if(diffEl){
+  diffEl.value=gameDifficulty;
+  diffEl.addEventListener('change', e=> setDifficulty(e.target.value));
+}
+applyDifficultyLighting();
 document.getElementById('btnRestart').addEventListener('click', ()=>{
   document.getElementById('jumpscare').classList.add('hidden');
   gameState.hasKey=false; gameState.hasToy=false; gameState.inventory=[]; updateInventoryUI(); bearStage=0;

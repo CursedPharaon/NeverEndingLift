@@ -71,6 +71,15 @@
     <h3>OPTIONS</h3>
     <label>Brightness <input type="range" id="brightness" min="0.5" max="1.5" step="0.05" value="1"></label>
     <label>Volume <input type="range" id="volume" min="0" max="1" step="0.05" value="0.6"></label>
+    <label>Чувствительность мыши <input type="range" id="mouseSens" min="0.2" max="3" step="0.1" value="1"><span id="sensValue">1.0</span></label>
+    <label>Сложность
+      <select id="difficulty" style="flex:1;background:#000;color:#ff3b3b;border:1px solid #ff1a1a;padding:4px 8px;font-family:'Share Tech Mono',monospace">
+        <option value="easy">Легкая — вся комната освещена</option>
+        <option value="normal" selected>Нормальная</option>
+        <option value="hard">Сложная — темно и страшно</option>
+      </select>
+    </label>
+    <p style="font-size:10px;color:#888;text-align:center;margin-top:4px;line-height:1.4">На легкой: яркий свет во всей комнате, фонарик не нужен.<br>На сложной: тьма, частые мерцания, монстр быстрее.</p>
     <button class="btn small" id="btnCloseOptions">CLOSE</button>
   </div>
   <div id="creditsPanel" class="panel hidden">
@@ -112,6 +121,13 @@
 
 <!-- Elevator Transition Text -->
 <div id="elevatorText" class="hidden">ELEVATOR MOVING...</div>
+
+<!-- BIG RUN OVERLAY for floor 662 -->
+<div id="runOverlay" class="hidden">
+  <div id="runBigText">RUN</div>
+  <div id="runSubText">БЕГИ ВПЕРЁД — НЕ ОБОРАЧИВАЙСЯ — ШКАФ УПАДЁТ, ЛЮСТРА СПАСЁТ</div>
+  <div id="runHint">W — бежать вперёд &nbsp;|&nbsp; A/D — в стороны &nbsp;|&nbsp; Монстр медленный — у тебя есть время</div>
+</div>
 
 <canvas id="c"></canvas>
 
